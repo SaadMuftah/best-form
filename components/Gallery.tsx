@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
 
 const images = [
@@ -24,27 +26,49 @@ const InstagramIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const Gallery: React.FC = () => {
   const sectionRef = useRef<HTMLElement>(null);
+  const imageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isChangingImage, setIsChangingImage] = useState(false);
+  const [initialRect, setInitialRect] = useState<DOMRect | null>(null);
+
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [copySuccess, setCopySuccess] = useState(false);
 
   const openLightbox = (index: number) => {
+    const rect = imageRefs.current[index]?.getBoundingClientRect();
+    if (!rect) return;
+    
     setSelectedImageIndex(index);
+    setInitialRect(rect);
     setIsLightboxOpen(true);
+    document.body.style.overflow = 'hidden';
   };
 
   const closeLightbox = () => {
-    setIsLightboxOpen(false);
+    setIsAnimating(false);
+  };
+
+  const changeImageWithFade = (nextIndex: number) => {
+    if (isChangingImage) return;
+    setIsChangingImage(true);
+    setTimeout(() => {
+        setSelectedImageIndex(nextIndex);
+        setTimeout(() => {
+            setIsChangingImage(false);
+        }, 50);
+    }, 150);
   };
 
   const showNextImage = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedImageIndex((prevIndex) => (prevIndex + 1) % images.length);
+    changeImageWithFade((selectedImageIndex + 1) % images.length);
   };
 
   const showPrevImage = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedImageIndex((prevIndex) => (prevIndex - 1 + images.length) % images.length);
+    changeImageWithFade((selectedImageIndex - 1 + images.length) % images.length);
   };
   
   const handleShareClick = (e: React.MouseEvent) => {
@@ -85,22 +109,48 @@ const Gallery: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isLightboxOpen) return;
       if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowRight') setSelectedImageIndex((prevIndex) => (prevIndex + 1) % images.length);
-      if (e.key === 'ArrowLeft') setSelectedImageIndex((prevIndex) => (prevIndex - 1 + images.length) % images.length);
+      if (e.key === 'ArrowRight') changeImageWithFade((selectedImageIndex + 1) % images.length);
+      if (e.key === 'ArrowLeft') changeImageWithFade((selectedImageIndex - 1 + images.length) % images.length);
     };
 
     window.addEventListener('keydown', handleKeyDown);
+
     if (isLightboxOpen) {
-      document.body.style.overflow = 'hidden';
+      requestAnimationFrame(() => setIsAnimating(true));
     } else {
       document.body.style.overflow = 'auto';
     }
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'auto';
     };
-  }, [isLightboxOpen]);
+  }, [isLightboxOpen, selectedImageIndex]);
+
+
+  const getImageStyles = (): React.CSSProperties => {
+    const baseTransition = '350ms cubic-bezier(0.4, 0, 0.2, 1)';
+    if (!initialRect) return { opacity: 0 };
+  
+    if (isAnimating) {
+      return {
+        top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 'auto', height: 'auto',
+        maxWidth: 'min(1024px, 90vw)', maxHeight: '85vh',
+        transition: `all ${baseTransition}`,
+        opacity: 1,
+      };
+    } else {
+      return {
+        top: `${initialRect.top}px`, left: `${initialRect.left}px`,
+        transform: 'translate(0, 0)',
+        width: `${initialRect.width}px`, height: `${initialRect.height}px`,
+        maxWidth: 'none', maxHeight: 'none',
+        transition: `all ${baseTransition}`,
+        opacity: 0,
+      };
+    }
+  };
 
 
   return (
@@ -113,7 +163,11 @@ const Gallery: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {images.map((src, index) => (
-              <div key={index} className="overflow-hidden rounded-lg group cursor-pointer" onClick={() => openLightbox(index)}>
+              <div 
+                key={index} 
+                ref={el => { imageRefs.current[index] = el }}
+                className="overflow-hidden rounded-lg group cursor-pointer" 
+                onClick={() => openLightbox(index)}>
                 <img 
                   src={src} 
                   alt={`Galerie Best Forme ${index + 1}`} 
@@ -127,70 +181,110 @@ const Gallery: React.FC = () => {
 
       {isLightboxOpen && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={closeLightbox}
         >
-          <button 
-            className="absolute top-4 right-4 text-white text-4xl hover:text-brand-yellow transition-colors"
-            onClick={closeLightbox}
-            aria-label="Fermer"
-          >
-            &times;
-          </button>
-          
-          <button 
-            className="absolute left-4 md:left-10 text-white text-4xl p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-75 transition-all"
-            onClick={showPrevImage}
-            aria-label="Image précédente"
-          >
-             &#8249;
-          </button>
+           <div 
+            className="absolute inset-0 bg-black transition-opacity duration-300"
+            style={{ opacity: isAnimating ? 0.9 : 0 }}
+          />
 
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-            <img 
-              src={images[selectedImageIndex]} 
-              alt={`Galerie Best Forme ${selectedImageIndex + 1}`}
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
-            />
-            <div className="mt-4 flex items-center space-x-4">
-              <a 
-                href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(images[selectedImageIndex])}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handleShareClick}
-                aria-label="Partager sur Facebook"
-                className="text-white hover:text-brand-yellow transition-colors"
-              >
-                <FacebookIcon className="w-8 h-8"/>
-              </a>
-               <a 
-                href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(images[selectedImageIndex])}&text=${encodeURIComponent('Découvrez la salle Best Forme !')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handleShareClick}
-                aria-label="Partager sur Twitter"
-                className="text-white hover:text-brand-yellow transition-colors"
-              >
-                <TwitterIcon className="w-8 h-8"/>
-              </a>
-              <button 
-                onClick={handleCopy}
-                aria-label="Copier le lien pour Instagram"
-                className="text-white hover:text-brand-yellow transition-colors"
-              >
-                <InstagramIcon className="w-8 h-8"/>
-              </button>
+          <img 
+            src={images[selectedImageIndex]}
+            alt={`Galerie Best Forme ${selectedImageIndex + 1}`}
+            className="absolute object-contain rounded-lg"
+            style={{
+                ...getImageStyles(),
+                opacity: isChangingImage ? 0 : getImageStyles().opacity,
+                transition: `${getImageStyles().transition}, opacity 150ms ease-in-out`,
+            }}
+            onTransitionEnd={() => {
+                if (!isAnimating) {
+                    setIsLightboxOpen(false);
+                }
+            }}
+          />
+
+           <div 
+            className="relative w-full h-full"
+            style={{ 
+              opacity: isAnimating && !isChangingImage ? 1 : 0, 
+              transition: 'opacity 300ms ease-in-out 150ms'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              className="absolute top-4 right-4 text-white text-4xl hover:text-brand-yellow transition-colors z-10"
+              onClick={closeLightbox}
+              aria-label="Fermer"
+            >
+              &times;
+            </button>
+            
+            <div
+              className="absolute left-4 top-1/2 -translate-y-1/2 group hidden md:block cursor-pointer"
+              onClick={showPrevImage}
+            >
+              <img
+                src={images[(selectedImageIndex - 1 + images.length) % images.length]}
+                alt="Précédente"
+                className="w-20 h-28 object-cover rounded-lg opacity-50 group-hover:opacity-100 group-hover:scale-105 transform transition-all duration-300"
+              />
             </div>
-             {copySuccess && <div className="absolute -bottom-6 bg-brand-yellow text-brand-dark text-sm font-bold px-3 py-1 rounded-md">Lien copié !</div>}
-          </div>
 
-          <button 
-            className="absolute right-4 md:right-10 text-white text-4xl p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-75 transition-all"
-            onClick={showNextImage}
-            aria-label="Image suivante"
-          >
-            &#8250;
-          </button>
+            <button 
+              className="absolute left-4 md:left-28 text-white text-4xl p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-75 transition-all"
+              onClick={showPrevImage}
+              aria-label="Image précédente"
+            >
+               &#8249;
+            </button>
+            
+            <button 
+              className="absolute right-4 md:right-28 text-white text-4xl p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-75 transition-all"
+              onClick={showNextImage}
+              aria-label="Image suivante"
+            >
+              &#8250;
+            </button>
+            
+            <div
+              className="absolute right-4 top-1/2 -translate-y-1/2 group hidden md:block cursor-pointer"
+              onClick={showNextImage}
+            >
+              <img
+                src={images[(selectedImageIndex + 1) % images.length]}
+                alt="Suivante"
+                className="w-20 h-28 object-cover rounded-lg opacity-50 group-hover:opacity-100 group-hover:scale-105 transform transition-all duration-300"
+              />
+            </div>
+            
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center">
+                <div className="flex items-center space-x-4">
+                  <a 
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(images[selectedImageIndex])}`}
+                    target="_blank" rel="noopener noreferrer" onClick={handleShareClick}
+                    aria-label="Partager sur Facebook" className="text-white hover:text-brand-yellow transition-colors"
+                  >
+                    <FacebookIcon className="w-8 h-8"/>
+                  </a>
+                   <a 
+                    href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(images[selectedImageIndex])}&text=${encodeURIComponent('Découvrez la salle Best Forme !')}`}
+                    target="_blank" rel="noopener noreferrer" onClick={handleShareClick}
+                    aria-label="Partager sur Twitter" className="text-white hover:text-brand-yellow transition-colors"
+                  >
+                    <TwitterIcon className="w-8 h-8"/>
+                  </a>
+                  <button 
+                    onClick={handleCopy} aria-label="Copier le lien pour Instagram"
+                    className="text-white hover:text-brand-yellow transition-colors"
+                  >
+                    <InstagramIcon className="w-8 h-8"/>
+                  </button>
+                </div>
+                {copySuccess && <div className="mt-2 bg-brand-yellow text-brand-dark text-sm font-bold px-3 py-1 rounded-md">Lien copié !</div>}
+            </div>
+          </div>
         </div>
       )}
     </>
